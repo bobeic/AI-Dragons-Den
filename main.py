@@ -16,12 +16,14 @@ model_name = "mistralai/Mistral-7B-Instruct-v0.3"
 
 dragon_llm = HuggingFaceEndpoint(
     repo_id=model_name,
+    task="text-generation",
     temperature=0.5,
     huggingfacehub_api_token=api_key,
 )
 
 entrepreneur_llm = HuggingFaceEndpoint(
     repo_id=model_name,
+    task="text-generation",
     temperature=0.5,
     huggingfacehub_api_token=api_key,
 )
