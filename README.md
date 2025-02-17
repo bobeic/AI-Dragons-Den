@@ -34,8 +34,16 @@ pip install -r requirements.txt
   ```
 
 ### 4️⃣ Run the Project
+To run the project without streaming the text do the following:
+- Setup up the backend:
 ```bash
-python main.py
+cd no_streaming
+uvicorn backend:app --reload
+```
+- In a different terminal, run the frontend:
+```bash
+cd no_streaming
+streamlit run frontend.py
 ```
 
 ## 🎯 Example Interaction
@@ -49,8 +57,3 @@ Entrepreneur: "We have developed a wearable that tracks hydration levels in real
 ```
 Dragon: "Interesting idea! What differentiates this from existing fitness trackers?"
 ```
-
-## 📌 Future Improvements
-- Deploy as a **web app**
-- Optimize **inference speed** with cloud GPUs
-- Support **multi-round interactions**
