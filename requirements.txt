@@ -11,3 +11,8 @@ streamlit
 requests
 fastapi
 uvicorn
+langgraph
+langgraph-sdk
+langgraph-checkpoint-sqlite
+langgraph-cli
+IPython
