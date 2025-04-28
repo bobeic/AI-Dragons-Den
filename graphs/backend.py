@@ -21,161 +21,218 @@ api_key = os.getenv("MISTRAL_API_KEY")
 
 from models import get_chat_model
 
-# Entrepreneur and Dragons
+# Entrepreneur model
 entrepreneur_llm = get_chat_model(model_name="llama3-8b-8192", provider="groq")
-tech_dragon_llm = get_chat_model(model_name="llama3-8b-8192", provider="groq")
-health_dragon_llm = get_chat_model(model_name="llama3-8b-8192", provider="groq")
+
+# Dragons
+dragon_names = ["peter_jones", "deborah_meaden", "touker_suleyman", "steven_bartlett", "sara_davies"]
+
+dragon_llms = {name: get_chat_model(model_name="llama3-8b-8192", provider="groq") for name in dragon_names}
+
 
 from langchain_huggingface import HuggingFaceEmbeddings
-import faiss
 from rag import create_dragon_vector_store
 
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 
-peter_texts = [
-    "Peter started his first business at the age of 16...",
-    "Peter Jones is known for his work in the retail sector...",
-    "Peter Jones has a strong focus on technology...",
-    "Jones is highly focused on the numbers...",
-    "One of Peter Jones' key criteria for investment...",
-    "While Jones is known for being a risk-taker..."
-]
+from dragon_bios import dragon_bios
 
 # Create Peter Jones' vector store
-peter_jones_store = create_dragon_vector_store("peter_jones", peter_texts)
+dragon_vectorstores = {}
+
+for dragon_name, bio_texts in dragon_bios.items():
+    store = create_dragon_vector_store(dragon_name, bio_texts)
+    dragon_vectorstores[dragon_name] = store
+
+dragons = {}
+
+for dragon_name in dragon_names:
+    dragons[dragon_name] = {
+        "llm": dragon_llms[dragon_name],
+        "vectorstore": dragon_vectorstores[dragon_name],
+        "focus": dragon_bios[dragon_name][0]["focus"], 
+        "personality": dragon_bios[dragon_name][0]["personality"], 
+    }
 
 # Define prompts
-entrepreneur_prompt = PromptTemplate.from_template("""
-You are an ambitious entrepreneur pitching a startup idea on Dragon's Den.
+from prompts.entrepreneur_prompts import entrepreneur_pitch_prompt, entrepreneur_response_prompt, entrepreneur_counter_offer_prompt
+from prompts.dragon_prompts import dragon_initial_evaluation_prompt, dragon_offer_making_prompt, dragon_negotiation_prompt
 
-Your task:
-1. Identify a major problem in the {industry} industry.
-2. Propose an innovative business idea that solves this problem.
-3. Explain your unique selling point (USP) – what makes your idea different?
-4. Describe your business model – how will you generate revenue?
+class State(MessagesState):
+    industry: str  # The industry of the pitch
+    pitch: str     # The original business pitch
+    summary: str = ""  # Optional: could be used to summarize conversation later
+    current_dragon: str = ""  # Who is the active dragon
+    current_offer: str = ""  # Dragon's offer (if any)
+    entrepreneur_counter_offer: str = ""  # Entrepreneur's counter-offer (if any)
 
-Be compelling and persuasive. Keep your pitch under 100 words.
 
-Your pitch:""")
-
-tech_dragon_prompt = PromptTemplate.from_template("""
-You are a seasoned investor on Dragon's Den with extensive expertise in technology and finance. 
-
-Your task:
-1. Analyze the business idea: {pitch} with a focus on its technological feasibility and financial viability.
-2. Identify the strengths – what makes it promising?
-3. Highlight potential risks or weaknesses, particularly in terms of tech scalability and financial sustainability.
-4. Assess market potential – is there demand? Who are the competitors?
-5. Suggest improvements or alternative business strategies, especially from a tech and finance perspective.
-
-Provide your analysis in a professional but engaging way, like a real Dragon's Den judge. Keep your response under 200 words.
-
-Your response:""")
-
-health_dragon_prompt = PromptTemplate.from_template("""
-You are a seasoned investor on Dragon's Den with deep expertise in healthcare and medical innovations. 
-
-Your task:
-1. Analyze the business idea: {pitch} with a focus on its applicability in healthcare and potential medical impact.
-2. Identify the strengths – what makes it promising?
-3. Highlight potential risks or weaknesses, especially in regulatory compliance, patient safety, and healthcare adoption.
-4. Assess market potential – is there demand? Who are the competitors?
-5. Suggest improvements or alternative business strategies, particularly from a healthcare industry perspective.
-
-Provide your analysis in a professional but engaging way, like a real Dragon's Den judge. Keep your response under 200 words.
-
-Your response:""")
-
-response_prompt = PromptTemplate.from_template("""
-You are the entrepreneur responding to investor feedback. Address the points raised in their evaluation and explain how your business will overcome challenges. Keep your response under 100 words.
-
-Investor's feedback: {evaluation}
-
-Your response:""")
-
-# Generate AI pitch
-def generate_demo_pitch(industry: str):
-    entrepreneur_chain = entrepreneur_prompt | entrepreneur_llm
-    response = entrepreneur_chain.invoke({"industry": industry})
-    return response
-
-template_industry = "fintech"
-pitch = generate_demo_pitch(template_industry)
-print(pitch.content)
-
-# Define state
-class ConversationState(MessagesState):
-    industry: str = template_industry
-    pitch: str
-    summary: str
-
-# Define investor evaluations
-def evaluate_pitch(state: ConversationState, dragon_llm, dragon_prompt):
+def dragon_evaluation_node(state: State):
     pitch = state["messages"][-1].content
-    dragon_chain = dragon_prompt | dragon_llm
-    response = dragon_chain.invoke({"pitch": pitch})
-    return {"messages": response}
-
-def evaluate_pitch_with_rag(state: ConversationState, dragon_llm, dragon_prompt, vector_store):
-    pitch = state["messages"][-1].content
-    retriever = vector_store.as_retriever(search_kwargs={"k": 2})  # retrieve top 2 docs
-    retrieved_docs = retriever.get_relevant_documents(pitch)
-    context = "\n\n".join([doc.page_content for doc in retrieved_docs])
     
-    # Merge context into the prompt
-    dragon_chain = dragon_prompt | dragon_llm
-    response = dragon_chain.invoke({
+    dragon_name = state["current_dragon"]
+    dragon_info = dragons[dragon_name]
+    dragon_llm = dragon_info["llm"]
+    evaluation_prompt = dragon_initial_evaluation_prompt
+
+    # Retrieve dragon's focus and personality (optional)
+    focus = dragon_info.get("focus", "general business")
+    personality = dragon_info.get("personality", "professional")
+    
+    # Build prompt inputs
+    input_data = {
+        "dragon_name": dragon_name.replace("_", " ").title(),
+        "focus": focus,
+        "personality": personality,
         "pitch": pitch,
-        "context": context,
-    })
+    }
     
-    return {"messages": response}
+    evaluation_chain = evaluation_prompt | dragon_llm
+    response = evaluation_chain.invoke(input_data)
 
+    return {"messages": [response]}
 
-def evaluate_pitch_tech_dragon(state: ConversationState):
-    return evaluate_pitch(state, tech_dragon_llm, tech_dragon_prompt)
-
-def evaluate_pitch_health_dragon(state: ConversationState):
-    return evaluate_pitch(state, health_dragon_llm, health_dragon_prompt)
-
-def entrepreneur_response(state: ConversationState):
-    evaluations = "\n\n".join(msg.content for msg in state["messages"][-2:])  # Combine both dragons' feedback
-    response_chain = response_prompt | entrepreneur_llm
-    response = response_chain.invoke({"evaluation": evaluations})
-    return {"messages": response}
-
-def pick_random_dragon(state):
+def entrepreneur_response_node(state: State):
+    evaluation = state["messages"][-1].content
     
-    # user_input = state['graph_state'] 
-    
-    if random.random() < 0.5:
+    # Entrepreneur model
+    entrepreneur_chain = entrepreneur_response_prompt | entrepreneur_llm
+    response = entrepreneur_chain.invoke({"evaluation": evaluation})
 
-        return "tech_dragon"
+    return {"messages": [response]}
+
+def dragon_offer_node(state: State):
+    entrepreneur_reply = state["messages"][-1].content
     
-    return "health_dragon"
+    dragon_name = state["current_dragon"]
+    dragon_info = dragons[dragon_name]
+    dragon_llm = dragon_info["llm"]
+    offer_prompt = dragon_offer_making_prompt
+
+    focus = dragon_info.get("focus", "general business")
+    personality = dragon_info.get("personality", "professional")
+    pitch = state["pitch"]
+    
+    input_data = {
+        "dragon_name": dragon_name.replace("_", " ").title(),
+        "focus": focus,
+        "personality": personality,
+        "pitch": pitch,
+    }
+    
+    offer_chain = offer_prompt | dragon_llm
+    response = offer_chain.invoke(input_data)
+
+    # Save current offer into state
+    state["current_offer"] = response.content
+
+    return {"messages": [response]}
+
+
+def entrepreneur_counter_node(state: State):
+    dragon_offer = state["messages"][-1].content
+
+    # Entrepreneur counter logic
+    entrepreneur_chain = entrepreneur_counter_offer_prompt | entrepreneur_llm
+    response = entrepreneur_chain.invoke({"offer": dragon_offer})
+
+    # Save counter offer into state
+    state["entrepreneur_counter_offer"] = response.content
+
+    return {"messages": [response]}
+
+
+def dragon_negotiation_node(state: State):
+    counter_offer = state["messages"][-1].content
+
+    dragon_name = state["current_dragon"]
+    dragon_info = dragons[dragon_name]
+    dragon_llm = dragon_info["llm"]
+    negotiation_prompt_obj = dragon_negotiation_prompt
+
+    focus = dragon_info.get("focus", "general business")
+    personality = dragon_info.get("personality", "professional")
+
+    input_data = {
+        "dragon_name": dragon_name.replace("_", " ").title(),
+        "focus": focus,
+        "personality": personality,
+        "counter_proposal": counter_offer,
+    }
+
+    negotiation_chain = negotiation_prompt_obj | dragon_llm
+    response = negotiation_chain.invoke(input_data)
+
+    return {"messages": [response]}
 
 
 # Define workflow
-builder = StateGraph(ConversationState)
+builder = StateGraph(State)
 
-# dragon_nodes = ["tech_dragon", "health_dragon"]
-# random.shuffle(dragon_nodes)  # Shuffle order dynamically
+builder.add_node("dragon_evaluation", dragon_evaluation_node)
+builder.add_node("entrepreneur_response", entrepreneur_response_node)
+builder.add_node("dragon_offer", dragon_offer_node)
+builder.add_node("entrepreneur_counter", entrepreneur_counter_node)
+builder.add_node("dragon_negotiation", dragon_negotiation_node)
 
-# builder.add_node("tech_dragon", evaluate_pitch_tech_dragon)
-builder.add_node("tech_dragon", lambda state: evaluate_pitch_with_rag(state, tech_dragon_llm, tech_dragon_prompt, peter_jones_store))
-builder.add_node("health_dragon", evaluate_pitch_health_dragon)
-builder.add_node("entrepreneur_response", entrepreneur_response)
+builder.add_edge(START, "dragon_evaluation")
+builder.add_edge("dragon_evaluation", "entrepreneur_response")
+builder.add_edge("entrepreneur_response", "dragon_offer")
+builder.add_edge("dragon_offer", "entrepreneur_counter")
+builder.add_edge("entrepreneur_counter", "dragon_negotiation")
+builder.add_edge("dragon_negotiation", END)
 
-# builder.add_edge(START, dragon_nodes[0])
-builder.add_conditional_edges(START, pick_random_dragon)
-# builder.add_edge(dragon_nodes[0], dragon_nodes[1])
-builder.add_edge("tech_dragon", "entrepreneur_response")
-builder.add_edge("health_dragon", "entrepreneur_response")
-builder.add_edge("entrepreneur_response", END)
+graph = builder.compile()
 
 graph = builder.compile()
 display(Image(graph.get_graph().draw_mermaid_png()))
 
-input_message = HumanMessage(content=pitch.content)
-for chunk in graph.stream({"messages": [input_message]}, stream_mode="values"):
+def generate_pitch(industry: str):
+    entrepreneur_chain = entrepreneur_pitch_prompt | entrepreneur_llm
+    response = entrepreneur_chain.invoke({"industry": industry})
+    return response
+
+template_industry = "fintech"
+pitch = generate_pitch(template_industry)
+print(pitch.content)
+
+pitch_text = pitch.content
+input_message = HumanMessage(content=pitch_text)
+
+state = State(
+    messages=[input_message],
+    industry=template_industry,
+    pitch=pitch_text,
+    summary="",
+)
+
+def pick_best_dragon(state: State):
+    pitch = state["pitch"].lower()
+
+    scores = {}
+    for dragon_name, info in dragons.items():
+        focus = info["focus"].lower()
+        
+        if focus in pitch:
+            scores[dragon_name] = 2
+        elif any(word in pitch for word in focus.split()):
+            scores[dragon_name] = 1
+        else:
+            scores[dragon_name] = 0
+
+    best_dragon = max(scores, key=lambda name: scores[name])
+    
+    print(f"Selected {best_dragon} based on pitch focus match.")
+
+    return best_dragon 
+
+
+# Pick best dragon based on pitch
+selected_dragon = pick_best_dragon(state)
+state["current_dragon"] = selected_dragon
+
+for chunk in graph.stream(state, stream_mode="values"):
     chunk["messages"][-1].pretty_print()
+
+# for chunk in graph.stream({"messages": [input_message]}, stream_mode="values"):
+#     chunk["messages"][-1].pretty_print()

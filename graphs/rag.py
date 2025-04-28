@@ -10,27 +10,22 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 def create_dragon_vector_store(
     dragon_name: str,
-    texts: list[str],
-    metadata_fn: Optional[Callable[[str], dict]] = None,
+    bios: list[dict],
     embedding_model: str = "sentence-transformers/all-mpnet-base-v2",
-    index_factory: Callable[[int], Any] = lambda dim: faiss.IndexFlatL2(dim),
     save_path: str = "./vectorstores",
 ):
-    if metadata_fn is None:
-        metadata_fn = lambda txt: {"source": dragon_name}
+    import os
 
     # Paths
     dragon_folder = os.path.join(save_path, dragon_name)
     index_file = os.path.join(dragon_folder, "index.faiss")
     docstore_file = os.path.join(dragon_folder, "docstore.pkl")
 
-    # Try loading
     if os.path.exists(index_file) and os.path.exists(docstore_file):
         print(f"Loading vectorstore for {dragon_name} from disk...")
         index = faiss.read_index(index_file)
         with open(docstore_file, "rb") as f:
             docstore = pickle.load(f)
-
         embeds = HuggingFaceEmbeddings(model_name=embedding_model)
         vs = FAISS(
             embedding_function=embeds,
@@ -40,11 +35,13 @@ def create_dragon_vector_store(
         )
         return vs
 
-    # Else create fresh
+    # Else create new
     print(f"Creating new vectorstore for {dragon_name}...")
     embeds = HuggingFaceEmbeddings(model_name=embedding_model)
-    dim = len(embeds.embed_query(texts[0]))
-    index = index_factory(dim)
+
+    dim = len(embeds.embed_query(bios[0]["text"]))  # <-- FIX: extract 'text'
+
+    index = faiss.IndexFlatL2(dim)
 
     vs = FAISS(
         embedding_function=embeds,
@@ -53,11 +50,22 @@ def create_dragon_vector_store(
         index_to_docstore_id={},
     )
 
-    docs = [Document(page_content=txt, metadata=metadata_fn(txt)) for txt in texts]
+    # Create documents correctly
+    docs = [
+        Document(
+            page_content=bio["text"],
+            metadata={
+                "source": dragon_name,
+                "focus": bio.get("focus", "general"),
+                "personality": bio.get("personality", "neutral"),
+            }
+        )
+        for bio in bios
+    ]
     ids = [str(uuid4()) for _ in docs]
     vs.add_documents(documents=docs, ids=ids)
 
-    # Save to disk
+    # Save
     os.makedirs(dragon_folder, exist_ok=True)
     faiss.write_index(vs.index, index_file)
     with open(docstore_file, "wb") as f:
