@@ -26,6 +26,24 @@ entrepreneur_llm = get_chat_model(model_name="llama3-8b-8192", provider="groq")
 tech_dragon_llm = get_chat_model(model_name="llama3-8b-8192", provider="groq")
 health_dragon_llm = get_chat_model(model_name="llama3-8b-8192", provider="groq")
 
+from langchain_huggingface import HuggingFaceEmbeddings
+import faiss
+from rag import create_dragon_vector_store
+
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+
+peter_texts = [
+    "Peter started his first business at the age of 16...",
+    "Peter Jones is known for his work in the retail sector...",
+    "Peter Jones has a strong focus on technology...",
+    "Jones is highly focused on the numbers...",
+    "One of Peter Jones' key criteria for investment...",
+    "While Jones is known for being a risk-taker..."
+]
+
+# Create Peter Jones' vector store
+peter_jones_store = create_dragon_vector_store("peter_jones", peter_texts)
+
 # Define prompts
 entrepreneur_prompt = PromptTemplate.from_template("""
 You are an ambitious entrepreneur pitching a startup idea on Dragon's Den.
@@ -98,6 +116,22 @@ def evaluate_pitch(state: ConversationState, dragon_llm, dragon_prompt):
     response = dragon_chain.invoke({"pitch": pitch})
     return {"messages": response}
 
+def evaluate_pitch_with_rag(state: ConversationState, dragon_llm, dragon_prompt, vector_store):
+    pitch = state["messages"][-1].content
+    retriever = vector_store.as_retriever(search_kwargs={"k": 2})  # retrieve top 2 docs
+    retrieved_docs = retriever.get_relevant_documents(pitch)
+    context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+    
+    # Merge context into the prompt
+    dragon_chain = dragon_prompt | dragon_llm
+    response = dragon_chain.invoke({
+        "pitch": pitch,
+        "context": context,
+    })
+    
+    return {"messages": response}
+
+
 def evaluate_pitch_tech_dragon(state: ConversationState):
     return evaluate_pitch(state, tech_dragon_llm, tech_dragon_prompt)
 
@@ -127,7 +161,8 @@ builder = StateGraph(ConversationState)
 # dragon_nodes = ["tech_dragon", "health_dragon"]
 # random.shuffle(dragon_nodes)  # Shuffle order dynamically
 
-builder.add_node("tech_dragon", evaluate_pitch_tech_dragon)
+# builder.add_node("tech_dragon", evaluate_pitch_tech_dragon)
+builder.add_node("tech_dragon", lambda state: evaluate_pitch_with_rag(state, tech_dragon_llm, tech_dragon_prompt, peter_jones_store))
 builder.add_node("health_dragon", evaluate_pitch_health_dragon)
 builder.add_node("entrepreneur_response", entrepreneur_response)
 
