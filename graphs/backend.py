@@ -17,9 +17,14 @@ load_dotenv()
 api_key = os.getenv("MISTRAL_API_KEY")
 
 # Initialize models
-entrepreneur_llm = ChatMistralAI(model="mistral-small-latest", temperature=0, max_retries=2, streaming=True)
-tech_dragon_llm = ChatMistralAI(model="mistral-small-latest", temperature=0, max_retries=2, streaming=True)
-health_dragon_llm = ChatMistralAI(model="mistral-small-latest", temperature=0, max_retries=2, streaming=True)
+# from langchain_community.chat_models import ChatMistralAI
+
+from models import get_chat_model
+
+# Entrepreneur and Dragons
+entrepreneur_llm = get_chat_model(model_name="llama3-8b-8192", provider="groq")
+tech_dragon_llm = get_chat_model(model_name="llama3-8b-8192", provider="groq")
+health_dragon_llm = get_chat_model(model_name="llama3-8b-8192", provider="groq")
 
 # Define prompts
 entrepreneur_prompt = PromptTemplate.from_template("""
