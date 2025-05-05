@@ -268,6 +268,8 @@ template_industry = "fintech"
 pitch = generate_pitch(template_industry)
 
 pitch_text = pitch.content
+# pitch_text = input("Enter your pitch: ")
+# pitch_text = "Good evening, Dragons. I'm here to tackle the major problem of financial inclusion in the fintech industry. Many underserved communities lack access to basic financial services, such as savings accounts and credit. My innovative solution is 'FinClude', a mobile app that uses AI-powered identity verification to onboard users quickly and securely. Our USP is our proprietary algorithm, which reduces the risk of fraud and increases approval rates by 30%. We'll generate revenue through a subscription-based model, offering users a range of financial services, including loans, insurance, and investment products. I'm seeking a $500,000 investment in exchange for 10% equity. Who's ready to join the financial revolution?"
 input_message = HumanMessage(content=pitch_text)
 
 state = State(
@@ -304,6 +306,8 @@ state["current_dragon"] = selected_dragon
 
 import uuid
 thread = {"configurable": {"thread_id": str(uuid.uuid4())}}
+
+
 
 for chunk in graph.stream(state, thread, stream_mode="values"):
     chunk["messages"][-1].pretty_print()
