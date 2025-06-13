@@ -1,15 +1,18 @@
+import asyncio
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from langgraph.types import Command
 from app.graph import graph
 from app.state import State
-from app.dragons.dragons import pick_best_dragon
+from app.dragons.dragons import pick_best_dragon, rank_dragons_by_relevance
 from uuid import uuid4
 from langchain_core.messages import AIMessage, HumanMessage
+from app.utils.tts import generate_tts  
+
 
 app = FastAPI()
 
-# In-memory thread tracking (replace with DB or persistent storage later)
 thread_store = {}
 
 class PitchRequest(BaseModel):
@@ -23,12 +26,20 @@ class UserReplyRequest(BaseModel):
 def start_conversation(req: PitchRequest):
     input_message = HumanMessage(content=req.pitch)
 
+    # state = State(
+    #     messages=[input_message],
+    #     industry="general",  # Optional – you can parse this from the pitch if needed
+    #     pitch=req.pitch,
+    #     summary="",
+    # )
+
     state = State(
         messages=[input_message],
-        industry="general",  # Optional – you can parse this from the pitch if needed
         pitch=req.pitch,
         summary="",
+        dragon_order=rank_dragons_by_relevance(req.pitch),  # New
     )
+
     
     selected_dragon = pick_best_dragon(state)
     state["current_dragon"] = selected_dragon
@@ -47,9 +58,11 @@ def start_conversation(req: PitchRequest):
         msg = step["messages"][-1]
         if isinstance(msg, AIMessage):
             msg_type = "dragon"
+            audio_path = asyncio.run(generate_tts(msg.content))  # Generate audio
             new_messages.append({
                     "type": msg_type,
-                    "content": msg.content
+                    "content": msg.content,
+                    "audio_path": audio_path
             })
     return {
         "messages": new_messages,

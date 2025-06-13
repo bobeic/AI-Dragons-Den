@@ -1,3 +1,4 @@
+from pydantic import Field
 from langgraph.graph import MessagesState
 
 class State(MessagesState):
@@ -7,3 +8,4 @@ class State(MessagesState):
     current_dragon: str = ""  # Who is the active dragon
     current_offer: str = ""  # Dragon's offer (if any)
     entrepreneur_counter_offer: str = ""  # Entrepreneur's counter-offer (if any)
+    dragon_order: list = Field(default_factory=list)

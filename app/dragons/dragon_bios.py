@@ -1,5 +1,3 @@
-# dragon_bios.py
-
 peter_jones_bio = [
     {
         "text": "Peter Jones is best known for investing in tech, retail, and media companies. Notable investments include Levi Roots' Reggae Reggae Sauce and Wonderland Magazine. He prioritizes clear business models, strong leadership teams, and financial discipline.",

@@ -47,3 +47,12 @@ def pick_best_dragon(pitch: str) -> str:
     print(f"Selected {best_dragon} based on pitch focus match.")
 
     return best_dragon 
+
+def rank_dragons_by_relevance(pitch: str):
+    # Simple relevance heuristic based on keyword overlap
+    ranked = sorted(
+        dragons.items(),
+        key=lambda item: pitch.lower().count(item[1]["focus"].lower()),
+        reverse=True
+    )
+    return [name for name, _ in ranked]
